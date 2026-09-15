@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
+        body { background: #f0f4f8; color: #1a1a2e; min-height: 100vh; }
+        .login-screen { display: flex; justify-content: center; align-items: center; min-height: 100vh; background: linear-gradient(135deg, #0077b6, #00b4d8); }
+        .login-box { background: white; padding: 40px 30px; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); width: 90%; max-width: 380px; text-align: center; }
+        .login-box h1 { font-size: 24px; margin-bottom: 8px; color: #0a2540; }
+        .login-box p { color: #718096; font-size: 14px; margin-bottom: 25px; }
+        .login-box input { width: 100%; padding: 14px; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 15px; outline: none; margin-bottom: 12px; }
+        .login-box input:focus { border-color: #0077b6; }
+        .login-box button { width: 100%; padding: 14px; background: linear-gradient(135deg, #00b4d8, #0077b6); color: white; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; }
+        .error { color: #e53e3e; font-size: 13px; margin-top: 10px; display: none; }
+        .dashboard { padding: 20px 5%; max-width: 1200px; margin: 0 auto; display: none; }
+        .dash-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px; }
+        .dash-header h1 { font-size: 26px; color: #0a2540; }
+        .logout-btn { background: #e53e3e; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+        .refresh-btn { background: #0077b6; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; margin-right: 10px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 25px; }
+        .stat-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .stat-card .label { font-size: 12px; color: #718096; font-weight: 600; text-transform: uppercase; }
+        .stat-card .value { font-size: 28px; font-weight: 800; color: #0077b6; margin-top: 5px; }
+        .leads-table { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.05); overflow-x: auto; }
+        .leads-table table { width: 100%; border-collapse: collapse; min-width: 600px; }
+        .leads-table th { background: #0077b6; color: white; padding: 14px 12px; text-align: left; font-size: 13px; font-weight: 600; }
+        .leads-table td { padding: 14px 12px; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
+        .leads-table tr:hover { background: #f7fafc; cursor: pointer; }
+        .empty { text-align: center; padding: 60px 20px; color: #718096; }
+        .empty h3 { font-size: 18px; margin-bottom: 8px; }
+        .detail-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center; padding: 20px; }
+        .detail-content { background: white; border-radius: 16px; max-width: 500px; width: 100%; padding: 25px; max-height: 80vh; overflow-y: auto; }
+        .detail-content h2 { color: #0a2540; margin-bottom: 15px; }
+        .detail-content p { margin-bottom: 10px; font-size: 14px; line-height: 1.6; color: #4a5568; }
+        .detail-content strong { color: #0a2540; }
+        .detail-content button { margin-top: 15px; width: 100%; padding: 12px; background: #0077b6; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; }
+    </style>
+</head>
+<body>
+    <div class="login-screen" id="loginScreen">
+        <div class="login-box">
+            <h1>🔐 Admin Login</h1>
+            <p id="loginBrand">Global Homes Dashboard</p>
+            <input type="password" id="password" placeholder="Enter password" onkeypress="if(event.key==='Enter')login()">
+            <button onclick="login()">Login</button>
+            <div class="error" id="errorMsg">Wrong password! Try again.</div>
+        </div>
+    </div>
+    <div class="dashboard" id="dashboard">
+        <div class="dash-header">
+            <h1>📊 <span id="brandName">Global Homes</span> - Leads</h1>
+            <div>
+                <button class="refresh-btn" onclick="loadLeads()">🔄 Refresh</button>
+                <button class="logout-btn" onclick="logout()">Logout</button>
+            </div>
+        </div>
+        <div class="stats-grid">
+            <div class="stat-card"><div class="label">Total Leads</div><div class="value" id="totalLeads">0</div></div>
+            <div class="stat-card"><div class="label">Today's Leads</div><div class="value" id="todayLeads">0</div></div>
+            <div class="stat-card"><div class="label">Last 7 Days</div><div class="value" id="weekLeads">0</div></div>
+        </div>
+        <div class="leads-table">
+            <table>
+                <thead>
+                    <tr><th>Date</th><th>Name</th><th>Phone</th><th>Budget</th><th>Location</th></tr>
+                </thead>
+                <tbody id="leadsBody"></tbody>
+            </table>
+            <div class="empty" id="emptyState">
+                <h3>📭 No leads yet</h3>
+                <p>When a customer chats with the bot, leads will appear here.</p>
+            </div>
+        </div>
+    </div>
+    <div class="detail-modal" id="detailModal">
+        <div class="detail-content">
+            <h2>📋 Lead Details</h2>
+            <div id="detailBody"></div>
+            <button onclick="closeDetail()">Close</button>
+        </div>
+    </div>
+    <script src="config.js"></script>
+    <script>
+        let allLeads = [];
+        document.getElementById('brandName').innerText = CLIENT_CONFIG.businessName;
+        document.getElementById('loginBrand').innerText = CLIENT_CONFIG.businessName + " Dashboard";
+        document.title = CLIENT_CONFIG.businessName + " - Admin";
+        function login() {
+            const pass = document.getElementById('password').value;
+            if (pass === CLIENT_CONFIG.adminPassword) {
+                document.getElementById('loginScreen').style.display = 'none';
+                document.getElementById('dashboard').style.display = 'block';
+                sessionStorage.setItem('admin_logged_in', 'true');
+                loadLeads();
+            } else {
+                document.getElementById('errorMsg').style.display = 'block';
+            }
+        }
+        function logout() {
+            sessionStorage.removeItem('admin_logged_in');
+            location.reload();
+        }
+        if (sessionStorage.getItem('admin_logged_in') === 'true') {
+            document.getElementById('loginScreen').style.display = 'none';
+            document.getElementById('dashboard').style.display = 'block';
+            loadLeads();
+        }
+        async function loadLeads() {
+            if (!CLIENT_CONFIG.googleSheetUrl || CLIENT_CONFIG.googleSheetUrl.includes("XXXXX")) {
+                document.getElementById('emptyState').innerHTML = "<h3>⚠️ URL not set</h3>";
+                return;
+            }
+            document.getElementById('emptyState').innerHTML = "<h3>⏳ Loading...</h3>";
+            try {
+                const proxyUrl = "https://corsproxy.io/?url=";
+                const res = await fetch(proxyUrl + encodeURIComponent(CLIENT_CONFIG.googleSheetUrl));
+                const data = await res.json();
+                if (data.length > 0 && Array.isArray(data[0])) {
+                    allLeads = data.slice(1).map(row => ({
+                        Date: row[0], Name: row[1], Phone: row[2], 
+                        Budget: row[3], Location: row[4], Summary: row[5]
+                    }));
+                } else {
+                    allLeads = data;
+                }
+                renderLeads(allLeads);
+                updateStats(allLeads);
+            } catch (e) {
+                console.error("Load error:", e);
+                document.getElementById('emptyState').innerHTML = "<h3>⚠️ Data load failed</h3><p>Click Refresh button</p>";
+            }
+        }
+        function updateStats(leads) {
+            document.getElementById('totalLeads').innerText = leads.length;
+            const today = new Date().toDateString();
+            document.getElementById('todayLeads').innerText = leads.filter(l => new Date(l.Date).toDateString() === today).length;
+            const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+            document.getElementById('weekLeads').innerText = leads.filter(l => new Date(l.Date) >= weekAgo).length;
+        }
+        function renderLeads(leads) {
+            const tbody = document.getElementById('leadsBody');
+            const emptyState = document.getElementById('emptyState');
+            if (leads.length === 0) {
+                tbody.innerHTML = '';
+                emptyState.style.display = 'block';
+                emptyState.innerHTML = "<h3>📭 No leads yet</h3><p>Leads will appear here.</p>";
+                return;
+            }
+            emptyState.style.display = 'none';
+            tbody.innerHTML = '';
+            leads.slice().reverse().forEach((lead, i) => {
+                const date = lead.Date ? new Date(lead.Date).toLocaleDateString() : 'N/A';
+                tbody.innerHTML += `
+                    <tr onclick="showDetail(${leads.length - 1 - i})">
+                        <td>${date}</td>
+                        <td>${lead.Name || 'N/A'}</td>
+                        <td>${lead.Phone || 'N/A'}</td>
+                        <td>${lead.Budget || 'N/A'}</td>
+                        <td>${lead.Location || 'N/A'}</td>
+                    </tr>`;
+            });
+        }
+        function showDetail(index) {
+            const lead = allLeads[index];
+            document.getElementById('detailBody').innerHTML = `
+                <p><strong>Date:</strong> ${lead.Date ? new Date(lead.Date).toLocaleString() : 'N/A'}</p>
+                <p><strong>Name:</strong> ${lead.Name || 'N/A'}</p>
+                <p><strong>Phone:</strong> ${lead.Phone || 'N/A'}</p>
+                <p><strong>Budget:</strong> ${lead.Budget || 'N/A'}</p>
+                <p><strong>Location:</strong> ${lead.Location || 'N/A'}</p>
+                <p><strong>Summary:</strong><br>${lead.Summary || 'N/A'}</p>`;
+            document.getElementById('detailModal').style.display = 'flex';
+        }
+        function closeDetail() { document.getElementById('detailModal').style.display = 'none'; }
+    </script>
+</body>
+</html>

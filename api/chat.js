@@ -8,6 +8,7 @@ export default async function handler(req, res) {
     if (!config) return res.status(500).json({ reply: "Config missing!" });
 
     try {
+        // Build system prompt
         let finalPrompt = config.systemPrompt
             .replace(/{businessName}/g, config.businessName || "")
             .replace(/{businessType}/g, config.businessType || "")
@@ -16,7 +17,8 @@ export default async function handler(req, res) {
             .replace(/{email}/g, config.email || "")
             .replace(/{address}/g, config.address || "");
 
-        finalPrompt += "\n\nIMPORTANT: Do NOT use asterisks (*), hashtags (#), or any markdown formatting in your replies. Write plain, simple text only.";
+        // Add instruction to avoid markdown
+        finalPrompt += "\n\nIMPORTANT: Do NOT use asterisks (*), hashtags (#), or any markdown formatting. Write plain text only.";
 
         const messages = [{ role: "system", content: finalPrompt }];
         if (history && history.length) {
@@ -24,6 +26,7 @@ export default async function handler(req, res) {
         }
         messages.push({ role: "user", content: message });
 
+        // Call Groq AI
         const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
             method: 'POST',
             headers: {
@@ -42,10 +45,14 @@ export default async function handler(req, res) {
         if (!groqData.choices || !groqData.choices[0]) {
             return res.status(500).json({ reply: "API Error: " + (groqData.error?.message || "Unknown") });
         }
+
+        // Get reply and remove asterisks
         let reply = groqData.choices[0].message.content;
         reply = reply.replace(/\*/g, '').replace(/#/g, '').replace(/_/g, '').replace(/`/g, '');
 
+        // ============================================
         // LEAD CAPTURE SYSTEM
+        // ============================================
         const fullText = (message || "") + " " + reply;
         const phoneMatch = fullText.match(/(\+?\d[\d\s\-]{8,14}\d)/);
         
@@ -61,8 +68,8 @@ export default async function handler(req, res) {
                 summary: fullText.substring(0, 300)
             };
 
-            // 1. Formspree (Email)
-            if (config.formspreeEndpoint && !config.formspreeEndpoint.includes("YOUR_FORM_ID")) {
+            // 1. Send to Formspree (Email)
+            if (config.formspreeEndpoint && !config.formspreeEndpoint.includes("YOUR_FORM")) {
                 try {
                     await fetch(config.formspreeEndpoint, {
                         method: 'POST',
@@ -72,18 +79,24 @@ export default async function handler(req, res) {
                         },
                         body: JSON.stringify(leadData)
                     });
-                } catch (e) { console.log("Formspree Error:", e.message); }
+                    console.log("Formspree: Lead sent");
+                } catch (e) { 
+                    console.log("Formspree Error:", e.message); 
+                }
             }
 
-            // 2. Google Sheet
-            if (config.googleSheetUrl && !config.googleSheetUrl.includes("XXXXX")) {
+            // 2. Send to Google Sheet
+            if (config.googleSheetUrl && !config.googleSheetUrl.includes("YOUR_APPS")) {
                 try {
                     await fetch(config.googleSheetUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(leadData)
                     });
-                } catch (e) { console.log("Google Sheet Error:", e.message); }
+                    console.log("Google Sheet: Lead sent");
+                } catch (e) { 
+                    console.log("Google Sheet Error:", e.message); 
+                }
             }
         }
 

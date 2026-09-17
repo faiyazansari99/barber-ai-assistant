@@ -1,35 +1,13 @@
-// ============================================
-// GLOBAL HOMES - AI CHAT BACKEND
-// ============================================
-// This file handles all AI requests.
-// It supports both Groq and Gemini APIs.
-// Client can choose their provider in config.js
-// ============================================
-
 export default async function handler(req, res) {
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
     const { message, config, history } = req.body;
-    
-    // Get API keys from environment variables
     const groqKey = process.env.GROQ_API_KEY;
-    const geminiKey = process.env.GEMINI_API_KEY;
-    
-    // Determine which provider to use
-    const provider = config.aiProvider || "groq";
-    const model = config.aiModel || "openai/gpt-oss-120b";
 
-    // Check if the required API key is present
-    if (provider === "groq" && !groqKey) {
-        return res.status(500).json({ reply: "Groq API Key missing. Add GROQ_API_KEY in Vercel Environment Variables." });
-    }
-    if (provider === "gemini" && !geminiKey) {
-        return res.status(500).json({ reply: "Gemini API Key missing. Add GEMINI_API_KEY in Vercel Environment Variables." });
-    }
-    if (!config) return res.status(500).json({ reply: "Configuration missing." });
+    if (!groqKey) return res.status(500).json({ reply: "Groq API Key missing!" });
+    if (!config) return res.status(500).json({ reply: "Config missing!" });
 
     try {
-        // Build the system prompt from config
         let finalPrompt = config.systemPrompt
             .replace(/{businessName}/g, config.businessName || "")
             .replace(/{businessType}/g, config.businessType || "")
@@ -38,67 +16,36 @@ export default async function handler(req, res) {
             .replace(/{email}/g, config.email || "")
             .replace(/{address}/g, config.address || "");
 
-        let reply = "";
+        finalPrompt += "\n\nIMPORTANT: Do NOT use asterisks (*), hashtags (#), or any markdown formatting in your replies. Write plain, simple text only.";
 
-        // ============================================
-        // CALL AI BASED ON SELECTED PROVIDER
-        // ============================================
-        if (provider === "gemini") {
-            // ============ GEMINI API ============
-            const geminiMessages = history ? history.map(m => ({
-                role: m.role === "assistant" ? "model" : "user",
-                parts: [{ text: m.content }]
-            })) : [];
-            geminiMessages.push({ role: "user", parts: [{ text: message }] });
-
-            const geminiRes = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
-                {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        system_instruction: { parts: [{ text: finalPrompt }] },
-                        contents: geminiMessages
-                    })
-                }
-            );
-            const geminiData = await geminiRes.json();
-            if (!geminiData.candidates || !geminiData.candidates[0]) {
-                return res.status(500).json({ reply: "Gemini API Error: " + (geminiData.error?.message || "Unknown") });
-            }
-            reply = geminiData.candidates[0].content.parts[0].text;
-            
-        } else {
-            // ============ GROQ API ============
-            const messages = [{ role: "system", content: finalPrompt }];
-            if (history && history.length) {
-                history.forEach(m => messages.push({ role: m.role, content: m.content }));
-            }
-            messages.push({ role: "user", content: message });
-
-            const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${groqKey}`
-                },
-                body: JSON.stringify({
-                    model: model,
-                    messages: messages,
-                    temperature: 0.7,
-                    max_tokens: 500
-                })
-            });
-            const groqData = await groqRes.json();
-            if (!groqData.choices || !groqData.choices[0]) {
-                return res.status(500).json({ reply: "Groq API Error: " + (groqData.error?.message || "Unknown") });
-            }
-            reply = groqData.choices[0].message.content;
+        const messages = [{ role: "system", content: finalPrompt }];
+        if (history && history.length) {
+            history.forEach(m => messages.push({ role: m.role, content: m.content }));
         }
+        messages.push({ role: "user", content: message });
 
-        // ============================================
+        const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${groqKey}`
+            },
+            body: JSON.stringify({
+                model: "openai/gpt-oss-120b",
+                messages: messages,
+                temperature: 0.7,
+                max_tokens: 500
+            })
+        });
+
+        const groqData = await groqRes.json();
+        if (!groqData.choices || !groqData.choices[0]) {
+            return res.status(500).json({ reply: "API Error: " + (groqData.error?.message || "Unknown") });
+        }
+        let reply = groqData.choices[0].message.content;
+        reply = reply.replace(/\*/g, '').replace(/#/g, '').replace(/_/g, '').replace(/`/g, '');
+
         // LEAD CAPTURE SYSTEM
-        // ============================================
         const fullText = (message || "") + " " + reply;
         const phoneMatch = fullText.match(/(\+?\d[\d\s\-]{8,14}\d)/);
         
@@ -114,19 +61,22 @@ export default async function handler(req, res) {
                 summary: fullText.substring(0, 300)
             };
 
-            // Send to Formspree (Email)
-            if (config.formspreeEndpoint && !config.formspreeEndpoint.includes("YOUR_FORMSPREE")) {
+            // 1. Formspree (Email)
+            if (config.formspreeEndpoint && !config.formspreeEndpoint.includes("YOUR_FORM_ID")) {
                 try {
                     await fetch(config.formspreeEndpoint, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
                         body: JSON.stringify(leadData)
                     });
                 } catch (e) { console.log("Formspree Error:", e.message); }
             }
 
-            // Send to Google Sheet
-            if (config.googleSheetUrl && !config.googleSheetUrl.includes("YOUR_APPS_SCRIPT")) {
+            // 2. Google Sheet
+            if (config.googleSheetUrl && !config.googleSheetUrl.includes("XXXXX")) {
                 try {
                     await fetch(config.googleSheetUrl, {
                         method: 'POST',
